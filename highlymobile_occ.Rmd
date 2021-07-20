@@ -6,6 +6,7 @@ output:
     fig_caption: yes
     reference_docx: ch1_formatted_biom.docx
 bibliography: library.bib
+csl: biometrics.csl
 editor_options: 
   chunk_output_type: console
 ---
@@ -236,16 +237,14 @@ results_for_plotting2$trueoccuse <- results_for_plotting2$occupancy*results_for_
 #results_for_plotting3 <- read.csv("C:/Users/Robbie/Desktop/wolverines/ch1poissims/simresults.csv")
 ####
 
+```
+
+```{r sim_vars_setup}
 #### Convergence
 tapply(as.numeric(results_for_plotting2$converged), results_for_plotting2$model, mean)
 
 ## Remove non-converged replicates
 results_for_plotting2 <- results_for_plotting2[which(results_for_plotting2$converged==1),]
-
-```
-
-```{r sim_vars_setup}
-
 
 ## Bias
 
@@ -302,66 +301,6 @@ apply(occusermsetab, c(1,4), mean) # Mean RMSE for different detection probabili
 occuse_rmse_by_det <- tapply(results_for_plotting2$occuse_se, list(results_for_plotting2$detection, results_for_plotting2$model), function(x){sqrt(mean(x))})
 ```
 
-```{r explore_sim_data_dt_data_loss}
-#library(jagsUI)
-#library(ggplot2)
-
-gibson <- FALSE
-
-# Want, for ggplot, a data set with variables detectprob, extprob, colprob estimates, and actual occprob, detectprob, ext/col prob status, and which model and rep it is
-# So should have 8 scenarios by 3 models by 3 reps = 72 rows?
-
-nsites <- 200
-psulength <- 120
-ntimes <- 4
-nyears <- 1
-ssulength <- psulength/ntimes
-nsimdata <- 200
-
-sim_data_summaries <- data.frame(stringsAsFactors=FALSE)
-
-for(detectprob in c(0.2,0.5, 0.8)){
-  for(occ in c(0.2, 0.5,0.8)){
-    for(q in c(0.2, 0.5,0.8)){
-      if(gibson){
-        wkdir <- "//tsclient/C/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
-        scen_folder <- paste("//tsclient/C/Users/Robbie/Desktop/wolverines/ch1poissims/p", p, "/psi", occprob, "/q", q, sep = "")
-        ncores <- 15
-      } else {
-        wkdir <- "C:/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
-        # Specific scenario folder to put rep folders in
-        scen_folder <- paste("C:/Users/Robbie/Desktop/wolverines/ch1poissims/p", detectprob, "/psi", occ, "/q", q, sep = "")
-        ncores <- 3
-      }
-      for(reps in 1:nsimdata){
-        data_in <- load(paste(scen_folder, "/rep", reps, "/simdata.Rdata", sep = ""))
-        #temp_data <- data_in
-        ct_data <- temp_data$ctdo_in
-        dt_data <- temp_data$do_in
-        
-        ndetects_ct <- sum(ct_data$y)
-        ndetects_dt <- sum(dt_data$x)
-        ndetoccasions_ct <- sum(ct_data$y>0)
-        ndetoccasions_dt <- 0 # add something here?
-        dt_data_sum <- apply(dt_data$x, c(1,2),sum)
-        mismatch_data <- ifelse(any(ct_data$y>0 & dt_data_sum==0),1,0)
-        # variable to see, for each ct occasion with detections, how many dt tertiary occasions have detections??
-        
-        sim_data_summaries <- rbind(sim_data_summaries, c(detectprob, occ, q, reps, ndetects_ct, ndetects_dt, ndetoccasions_ct, mismatch_data))
-      }
-    }
-  }
-}
-
-# Summaries
-names(sim_data_summaries) <- c("det", "occ", "use", "reps", "ndets_ct", "ndets_dt", "noccsdet_ct", "mismatch_data")
-
-tapply(sim_data_summaries$ndets_ct, list(sim_data_summaries$det, sim_data_summaries$occ, sim_data_summaries$use), mean)
-
-tapply(sim_data_summaries$ndets_dt, list(sim_data_summaries$det, sim_data_summaries$occ, sim_data_summaries$use), mean)
-
-```
-
 Model performance was generally good for both the continuous-time and discrete-time models. Both models estimated detection probability well, with the continuous-time model providing marginally more precise and less biased estimates of detection probability in general (overall RMSE was `r round(as.numeric(tapply(results_for_plotting2$det_se, results_for_plotting2$model2, function(x){sqrt(mean(x))})),dig=3)[1]` for continuous-time detection and `r round(as.numeric(tapply(results_for_plotting2$det_se, results_for_plotting2$model2, function(x){sqrt(mean(x))})),dig=3)[2]` for discrete-time detection; see Web Figure 1). The bias and precision of occupancy estimates were sensitive to use; while occupancy generally had small relative bias, with the largest bias occurring under low-use scenarios (Figure 1; Web Figure 2; Web Table 2). Bias and precision of occupancy, however, were largely not sensitive to changes in detection probability, unless use was low (Web Figure 2). Use and instantaneous occupancy were almost always less biased under the continuous-time model than under the discrete-time model (Tables 1-2; Web Tables 3-4), and bias in these quantities decreased substantially as use increased. 
 
 ## Case study
@@ -374,7 +313,6 @@ Posterior mean estimates of long-term, asymptotic occupancy ($\psi_0$) were 0.72
 library(stringr)
 library(lubridate)
 library(jagsUI)
-library(dplyr)
 
 ## Load data
 load("C:/Users/Robbie/Desktop/wolverines/data/RforRobbie/RforRobbie/detections_Long.Rdata")
@@ -384,9 +322,6 @@ ntimes <- 4
 
 time_scaler <- 1
 
-# Add ungroup - 11/30/2020
-cams.processed <- cams.processed %>% ungroup()
-dets.processed <- dets.processed %>% ungroup()
 
 # Reformat dates
 cams.processed$ActiveStart <- as.POSIXct(cams.processed$ActiveStart, format = "%m/%d/%Y %H:%M:%S", tz = "US/Pacific")
@@ -444,6 +379,45 @@ for(i in 1:nsites){
 
 ## function to tell you which detections count as independent
 ## something is wrong with this function
+which.indepn <- function(timevec, cutoff=0.5){
+  # Cutoff is in terms of hours
+  i <- 1
+  time.elapsed <- c(0)
+  new.det <- numeric(length(timevec))
+  new.det[1] <- 1
+  while(i <= length(timevec)){
+    time.elapsed <- sum(c(time.elapsed, timevec[i]))
+    if(time.elapsed>cutoff){
+      time.elapsed <- c(0)
+      new.det[i] <- 1
+    }
+    i <- i+1
+  }
+  return(new.det)
+}
+
+## Create y, number of detections for continuous-time model!
+# Double-check that this is returning the correct number of independent detections - not one too few or too many
+y <- matrix(0, nrow=nsites, ncol=ntimes)
+for(i in 1:nsites){
+  sitecams <- subset(wa.cams, LocationName==unique(wa.cams$LocationName)[i])
+  sitedets <- subset(wa.dets, LocationName==unique(wa.cams$LocationName)[i])
+  if(nrow(sitedets) > 0){
+    # Print something to check how many 20-30 min differences there are
+    # Just yeah, check this in general!!!
+    sitetimes <- cumsum(c(0,as.numeric(diff(sitedets$ImageDate))))/3600 # this is in hours
+    #print(c(diff(sitedets$ImageDate)/60)[which((diff(sitedets$ImageDate)/60)>20)])
+    sitetimes2 <- sitetimes[which((diff(sitedets$ImageDate)/60)>30)]/24
+    if(length(sitetimes[which((diff(sitedets$ImageDate)/60)>30)]/24)==0){
+      sitetimes2 <- min(sitetimes[sitetimes>0])
+    }
+    dets_start <- min(sitedets$ImageDate)-min(cuttimes) # Is this off?
+    sitetimes3 <- as.numeric(sitetimes2+dets_start)
+    times_cut <- cut(sitetimes3, breaks=c(0, cumsum(L[i,])))
+    y[i,] <- table(times_cut)
+    y[i,] <- ifelse(y[i,] > 1, y[i,]+1, y[i,]) # To account for the fact that diff pulls out all but one detection
+  }
+}
 
 # Rows that should have dets:
 #2, 5, 7, 11, 12, 13, 15, 16, 19
@@ -453,44 +427,14 @@ for(i in 1:nsites){
 
 ## JAGS models to run the analyses below
 
-ynew <- matrix(0, nrow=nsites, ncol=ntimes)
-for(i in 1:nsites){
-  sitecams <- subset(wa.cams, LocationName==unique(wa.cams$LocationName)[i])
-  sitedets <- subset(wa.dets, LocationName==unique(wa.cams$LocationName)[i])
-  if(nrow(sitedets) > 0){
-    newtimes <- as.numeric(difftime(sitedets$ImageDate,min(cuttimes),units="mins"))
-    
-    sitedets$event <- c(1, rep(NA, nrow(sitedets)-1))
-    count <- 2
-    event <- 1
-    while(count <= nrow(sitedets)){
-      # Go through newtimes, track time somehow
-      current_time <- newtimes[count] # current time
-      ongoing_event <- min(which(sitedets$event==event)) # the first time in the current event
-      timediff <- current_time-newtimes[ongoing_event] # calculate difference between this time and beginning of event
-      if(timediff>60){
-        event <- event+1 # reset event
-      }
-        sitedets$event[count] <- event
-        count <- count+1
-      
-    }
-    
-    sitedets_unique <- sitedets %>% distinct(event,.keep_all=TRUE)
-    occasioncuts <- cut(sitedets_unique$ImageDate, breaks=cuttimes)
-    ynew[i,] <- table(occasioncuts)
-    
-  }
-}
-
 
 ## Continuous-time model
 # setwd
 setwd("C:/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup")
 ## impl
-win.data <-list(y=ynew, L=L, nsites=nsites,ntimes=ntimes)
-zinits <- ifelse(apply(ynew,1,sum)>0, 1, 0)
-uinits <- ifelse(ynew > 0, 1, 0)
+win.data <-list(y=y, L=L, nsites=nsites,ntimes=ntimes)
+zinits <- ifelse(apply(y,1,sum)>0, 1, 0)
+uinits <- ifelse(y > 0, 1, 0)
 inits=function(){list(int_psi=runif(1),int_q=runif(1),int_lambda=runif(1),z=zinits,u=uinits)}
 params <- c("int_psi", "int_q", "int_p", "psiq")
 ni <- 50000; nt <- 10; nb <- 20000; nc <- 3 # 5000;2;2000;3
@@ -500,74 +444,57 @@ out_wa_ctdo <- jags(win.data, inits = inits, params, "wolverinepoiswa.txt", n.ch
 
 #### Discrete-time data processing (use the below)
 K <- 3
-xnew <- array(0, dim=c(nsites, ntimes, K))
+x <- array(0, dim=c(nsites, ntimes, K))
+
+#detcuttimes <- seq(ISOdate(2016, 12, 1, hour = 0, tz = "US/Pacific"), length.out = ntimes*K+1, by = "10 days")
+
 for(i in 1:nsites){
   sitecams <- subset(wa.cams, LocationName==unique(wa.cams$LocationName)[i])
   sitedets <- subset(wa.dets, LocationName==unique(wa.cams$LocationName)[i])
   if(nrow(sitedets) > 0){
-    
-    # Start with the beginning of the primary occasion
-    newtimes <- as.numeric(difftime(sitedets$ImageDate,min(cuttimes),units="mins"))
-    sitedets$event <- c(1, rep(NA, nrow(sitedets)-1))
-    count <- 2
-    event <- 1
-    while(count <= nrow(sitedets)){
-      # Go through newtimes, track time somehow
-      current_time <- newtimes[count] # current time
-      ongoing_event <- min(which(sitedets$event==event)) # the first time in the current event
-      timediff <- current_time-newtimes[ongoing_event] # calculate difference between this time and beginning of event
-      if(timediff>60){
-        event <- event+1 # reset event
-      }
-        sitedets$event[count] <- event
-        count <- count+1
-      
+    # Print something to check how many 20-30 min differences there are
+    # Just yeah, check this in general!!!
+    sitetimes <- cumsum(c(0,as.numeric(diff(sitedets$ImageDate))))/3600 # this is in hours
+    #print(c(diff(sitedets$ImageDate)/60)[which((diff(sitedets$ImageDate)/60)>20)])
+    sitetimes2 <- sitetimes[which((diff(sitedets$ImageDate)/60)>30)]/24
+    if(length(sitetimes[which((diff(sitedets$ImageDate)/60)>30)]/24)==0){
+      sitetimes2 <- min(sitetimes[sitetimes>0])
     }
-    
-    sitedets_unique <- sitedets %>% distinct(event,.keep_all=TRUE)
-    cuttimes2 <- seq(ISOdate(2016, 12, 1, hour = 0, tz = "US/Pacific"), length.out = ntimes*K+1, by = "10 days")
-    occasioncuts <- cut(sitedets_unique$ImageDate, breaks=cuttimes2)
-    dettab <- table(occasioncuts)
-    for(j in 1:K){
-    xnew[i,j,] <- ifelse(dettab[(1:K)+(j-1)*K]>0,1,0)
+    dets_start <- min(sitedets$ImageDate)-min(cuttimes) # Is this off?
+    sitetimes3 <- as.numeric(sitetimes2+dets_start)
+    times_cut <- cut(sitetimes3, breaks=seq(0, ssulength*ntimes, by=ssulength/K))
+    # ^ Note that only two sites have any L<30, not when there are detections, and only by a few days
+    dettab <- table(times_cut)
+    for(j in 1:ntimes){
+      x[i,j,] <- ifelse(dettab[(1:K)+(j-1)*K]>0,1,0) # figure out the indexing
     }
   }
 }
+  # sitetimes <- casc[which(casc$Site==i), ]
+  # 
+  # # x
+  # det2nums <- table(cut(as.numeric(unlist(sitetimes[,20:34])), detcuttimes, labels = FALSE))
+  # det2pers <- as.numeric(names(det2nums))
+  # for(j in 1:nyears){
+  #   for(b in 1:ntimes){
+  #     for(k in 1:K){
+  #       if(((j-1)*ntimes*3+(b-1)*3+k) %in% det2pers){
+  #         # Should be right now
+  #         x[i,j,b,k] <- ifelse(det2nums[which(det2pers==(j-1)*ntimes*3+(b-1)*3+k)]>0,1,0)
+  #       }
+  #     }
+  #   }
+  # }
 
-win.data <-list(x=xnew, K=K, nsites=nsites,ntimes=ntimes)
-zinits <- ifelse(apply(ynew,1,sum)>0, 1, 0)
-uinits <- ifelse(ynew > 0, 1, 0)
+win.data <-list(x=x, K=K, nsites=nsites,ntimes=ntimes)
+zinits <- ifelse(apply(y,1,sum)>0, 1, 0)
+uinits <- ifelse(y > 0, 1, 0)
 inits=function(){list(int_psi=runif(1),int_q=runif(1),int_p=runif(1),z=zinits,u=uinits)}
 params <- c("int_psi", "int_q", "int_p", "psiq")
 ni <- 50000; nt <- 10; nb <- 20000; nc <- 3 # 5000;2;2000;3
 out_wa_dtdo <- jags(win.data, inits = inits, params, "wolverinedtdowa.txt", n.chains=nc, n.iter=ni, n.burn=nb, n.thin=nt, parallel = TRUE, n.cores = 3)
 # Should up the thin rate maybe - done
 #print(out_wa_dtdo)
-
-# Extra analysis - spatial extent of cameras and average distance between them
-wa.cams.unique <- wa.cams %>% distinct(LocationName, .keep_all=TRUE)
-wa.cams.sp <- SpatialPoints(coords=cbind(wa.cams.unique$UTM_E, wa.cams.unique$UTM_N))
-proj4string(wa.cams.sp) <- "+proj=utm +zone=10 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0"
-
-((max(wa.cams.sp@coords[,1])-min(wa.cams.sp@coords[,1]))*(max(wa.cams.sp@coords[,2])-min(wa.cams.sp@coords[,2])))/1000000 # doesn't seem right
-wa.cam.dists <- pointDistance(wa.cams.sp, lonlat = FALSE)/1000
-wa.cam.dists <- as.matrix(wa.cam.dists)
-mean(wa.cam.dists[upper.tri(wa.cam.dists)])
-
-CoordsForRobbie_201130 <- read_excel("C:/Users/Robbie/Downloads/CoordsForRobbie_201130.xlsx")
-
-CoordsForRobbie_201130$Lat <- CoordsForRobbie_201130$`Lat-DD`
-CoordsForRobbie_201130$Long <- CoordsForRobbie_201130$`Long-DD`
-wa.cams.lonlat <- SpatialPoints(coords=cbind(CoordsForRobbie_201130$Long, CoordsForRobbie_201130$Lat))
-wa.cams.lonlat.dist <- pointDistance(wa.cams.lonlat, lonlat=TRUE)/1000
-wa.cams.lonlat.dist <- as.matrix(wa.cams.lonlat.dist)
-mean(wa.cams.lonlat.dist[lower.tri(wa.cams.lonlat.dist)])
-wa.bbox.pts <- data.frame(expand.grid(wa.cams.lonlat@bbox[1,], wa.cams.lonlat@bbox[2,]))
-wa.bbox.pts <- wa.bbox.pts[c(1,2,4,3),]
-areaPolygon(wa.bbox.pts)/1000000
-#library(spatstat)
-#area(boundingbox(wa.cams.lonlat))
-#wa.cams.area <- areaPolygon(wa.cams.lonlat@bbox)
 
 ```
 
@@ -683,39 +610,18 @@ We thank S. Converse, N. Hostetter, A. Warlick. H. Sipe, M. Sorel, T. Roussin, S
 # Supporting Information
 Additional supporting information may be found online in the Supporting Information section at the end of the article.
 
-# Data Availability Statement
-The data that support the findings of portions of this study are available from the Washington Department of Fish and Wildlife. Restrictions apply to the availability of these data, which were used under license for this study. Please contact the department directly with data requests.
-
 # Tables and Figures
 *Figure 1. Posterior mean estimates of occupancy probability from all simulation scenarios where true per-visit detection probability was 0.2. True occupancy probability increases from the left panel (probability 0.2) to the right panel (probability 0.8). The black, dark gray, and light gray boxplots represent scenarios with true use probability of 0.2, 0.5, and 0.8, respectively. *
 ```{r simulation_fig_occ, results = "asis"}
 occupancy_lines <- data.frame(occline = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8), occupancy = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8))
 
-ggplot(results_for_plotting2, aes(x = model2, y = occprob)) + 
+ggplot(results_for_plotting2[which(results_for_plotting2$detection==0.2),], aes(x = model2, y = occprob)) + 
   geom_boxplot(aes(fill = factor(trueuse))) + 
-  facet_grid(detection ~ occupancy, labeller = label_both) +
-  geom_hline(data = occupancy_lines, aes(yintercept = occline), colour = "black") + 
+  facet_grid(. ~ occupancy, labeller = label_both) +
+  #geom_hline(data = occupancy_lines, aes(yintercept = occline), colour = "red") + 
   scale_fill_grey(start=0,end=.9) +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1), text=element_text(size=15)) + 
-  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
-  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
-  xlab("model") + ylab("occupancy probability") + labs(fill = "Use probability")
-
-```
-
-*Web Figure 1. Posterior mean estimates of detection probability from all simulation scenarios where true per-visit detection probability was 0.2. True occupancy probability increases from the left panel (probability 0.2) to the right panel (probability 0.8). The black, dark gray, and light gray boxplots represent scenarios with true use probability of 0.2, 0.5, and 0.8, respectively. *
-```{r simulation_fig_occ, results = "asis"}
-occupancy_lines <- data.frame(occline = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8), occupancy = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8))
-
-ggplot(results_for_plotting2, aes(x = model2, y = occprob)) + 
-  geom_boxplot(aes(fill = factor(trueuse))) + 
-  facet_grid(detection ~ occupancy, labeller = label_both) +
-  geom_hline(data = occupancy_lines, aes(yintercept = occline), colour = "black") + 
-  scale_fill_grey(start=0,end=.9) +
-  scale_y_continuous(breaks=c(0.2,0.5,0.8))+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1), text=element_text(size=15)) + 
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1)) + 
   annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
   xlab("model") + ylab("occupancy probability") + labs(fill = "Use probability")
@@ -728,17 +634,16 @@ ggplot(results_for_plotting2, aes(x = model2, y = occprob)) +
 #trueuse_lines <- data.frame(extline = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8))
 
 
-ggplot(results_for_plotting2[results_for_plotting2$detection==0.2,], aes(x = model2, y = use)) + 
+ggplot(results_for_plotting2[which(results_for_plotting2$detection==0.2),], aes(x = model2, y = use)) + 
   geom_boxplot(aes(fill = factor(trueuse))) + 
-  facet_grid(detection ~ occupancy, labeller = label_both) +
-  geom_hline(yintercept = c(0.2,0.5,0.8), colour = "black") + 
+  facet_grid(. ~ occupancy, labeller = label_both) +
+  #geom_hline(data = trueuse_lines, aes(yintercept = extline), colour = "red") + 
   scale_fill_grey(start=0,end=.9) +
-  scale_y_continuous(breaks=c(0.2,0.5,0.8))+
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1), text=element_text(size=15)) + 
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1)) + 
   annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
   annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
-  xlab("model") + ylab("occupancy probability") + labs(fill = "Use probability")
+  xlab("model") + ylab("use probability") + labs(fill = "Use probability")
 
 # Tables
 #dimnames(usebiastab)[[2]] <- c("Use 0.2", "0.5", "0.8")
@@ -806,7 +711,7 @@ knitr::kable(case_df) # For now!
 # Create data frame for ggplot?
 pwr_ggplot <- data.frame(pwr = c(tapply(pwr_all_reps$trend_occ, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
 , tapply(pwr_all_reps$trend_occuse, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
-), parameter = c(rep("occupancy", 24), rep("inst. occupancy", 24)))
+), parameter = c(rep("occupancy", 24), rep("instantaneous occupancy", 24)))
 
 scenarios <- expand.grid(R=c(0.933, 0.972, 1.022, 1.041), pcells=c(0.2, 0.5,0.8), model=c("explicit", "implicit"))
 
