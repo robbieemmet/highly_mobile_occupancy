@@ -1,0 +1,25 @@
+
+    model{
+    
+    #Priors
+    int_psi ~ dunif(0,1)
+    int_q ~ dunif(0,1)
+    int_lambda ~ dunif(0,1)
+    #sigma ~ dunif(0,100)
+    
+    
+    #Likelihood
+    for(i in 1:nsites){
+    psi[i] <- int_psi
+    z[i] ~ dbin(psi[i],1)
+    for(j in 1:ntimes){
+    q[i,j] <- int_q
+    u[i,j] ~ dbin(z[i]*q[i,j],1)
+    y[i,j] ~ dpois(u[i,j]*int_lambda*L[i,j])
+    }
+    }
+    psiq <- int_psi*int_q
+    int_p <- 1-exp(-int_lambda*10)
+
+    }
+    

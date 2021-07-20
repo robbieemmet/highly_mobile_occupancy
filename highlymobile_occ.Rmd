@@ -1,0 +1,822 @@
+---
+title: "Developing an occupancy model for monitoring rare and highly mobile species"
+author: "Robert L. Emmet, Robert A. Long, and Beth Gardner"
+output: 
+  word_document:
+    fig_caption: yes
+    reference_docx: ch1_formatted_biom.docx
+bibliography: library.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, cache = T, warning = F, message=F, fig.path = 'figures/', results = "hide")
+```
+
+```{r load_sim_results}
+#results_for_plotting2 <- read.csv("C:/Users/Robbie/Desktop/wolverines/ch1poissims/simresults.csv")
+# Try some tables! You have the sim results
+```
+
+# Summary
+Occupancy-based methods are commonly used to model the distribution, habitat use, and relative abundance of species. In particular, occupancy has been used as an index of abundance for monitoring purposes, allowing researchers to track population trends using detection non-detection data alone. Occupancy models, however, have proven difficult to apply to rare, highly mobile species. Species' movements outside of sampling areas may lead to violation of the geographic closure assumption of occupancy models and overestimated occupancy probability. Low detection may further inflate occupancy probability estimates. We developed a novel continuous-time, multi-scale occupancy model to simultaneously account for closure assumption violations and low detection probability. We used a simulation study to test our model relative to a discrete-time multi-scale model, and we conducted a power analysis to assess the ability of an "instantaneous occupancy" parameter to detect trends in abundance, relative to occupancy alone. The continuous-time model was competitive with the discrete-time model, and was generally computationally faster than and outperformed the discrete-time model when detection probability was low. The multi-scale occupancy parameter outperformed occupancy in terms of power to detect trends when we used an implicit dynamic occupancy model, but performed no better when we used an explicit dynamic occupancy model. Our multi-scale, continuous-time occupancy model can be used to detect trends in abundance of rare, highly mobile species, regardless of how occupancy dynamics are modeled.
+
+# Keywords
+continuous-time; multi-scale; occupancy model; wolverine 
+
+# Introduction
+
+Understanding the distribution and abundance of species, and how these population attributes change over time, is paramount to the study of ecology. Since their inception, occupancy models have been applied to the study of distribution, habitat associations, and relative abundance of species [@MacKenzie2002]. Researchers have extended occupancy models to study dynamic occurrence patterns (including local colonization and extinction) with respect to covariates [@MacKenzie2003], community richness [@Dorazio2005], and interspecies interactions [@Rota2016].
+
+For some species, especially those which maintain territories, occupancy can be directly proportional to the number of individuals in a study area [@MacKenzie2005_Ecology]. Thus, occupancy has been used for monitoring populations [@Steenweg2016; @Pavlacky2012; @Berigan2018; @Linden2017], and in some cases occupancy can be used as an index of abundance [@MacKenzie2004], or to infer abundance from detection frequencies [@Royle2003].
+
+Despite widespread use and constant development, occupancy models remain difficult to fit for rare and highly mobile species. Occupancy models may greatly overestimate occupancy probabilities for species that occur at low densities and have large home ranges [@Neilson2018 ; @Stewart2018]. This is especially true if animals leave or enter sampling units during a primary sampling period (e.g., temporary emigration), thus violating the assumption of geographic closure required of standard occupancy models [@Rota2009]. Moreover, standard occupancy models may underutilize continuously collected data from survey methods such as track surveys, scat surveys, and camera traps. These data are often discretized into arbitrarily defined "encounter histories" under a standard occupancy model [@Burton2015 ; @Guillera-Arroita2011 ; @Gompper2006; @Kays2008]. This discretization can potentially lead to overestimates of occupancy when detection probabilities are low [@Guillera-Arroita2011].
+
+When they occur together, violations of the closure assumption and low detection probability among species with large home ranges and low density can lead to overestimates of occupancy and ultimately a non-linear occupancy-abundance relationship [@Neilson2018]. This has implications for monitoring;  in this scenario, occupancy may not linearly track abundance until abundance has declined or increased steeply [@Ellis2014]. However, even over long survey seasons or large spatial extents, it is possible to investigate finer-scale presence with a multi-scale occupancy model. Multi-scale models separately estimate coarse-scale occupancy and fine-scale use in sample units, allowing researchers to estimate presence over multiple temporal or spatial scales [@Nichols2008; @Bled2013]. Multi-scale models may have advantages over standard single-season occupancy models for monitoring changes in abundance. Occupancy is more linearly related to abundance over shorter time periods than over longer time periods [@Steenweg2018; @Ellis2014]. The frequency of site use itself may be related to abundance, via the inverse relationship between home-range size and population density documented in multiple species [@Efford2016], which may arise due to changes in habitat quality over space or time [@Berigan2018; @Linden2017; @Sheehy2018]. Thus, accounting for site use with multi-scale models [@Nichols2008] may result in a more linear occupancy-abundance relationship, improving the power of occupancy models to monitor rare, highly mobile species.
+
+We aimed to address two complications that arise when using occupancy models to monitor highly mobile species: (1) low detection probability of such species and (2) the tendency of these species to leave all but the largest sampling sites during a sampling season, which violates the geographic closure assumption and makes interpretation of occupancy probabilities difficult. We propose a multi-scale occupancy model to address these issues. We incorporate a continuous-time detection process [@Guillera-Arroita2011], which allows researchers to use all available data and avoid creating arbitrary detection periods, into a two-scale, latent occupancy process allowing changes in species' availability for detection (site "use") at an occupied site over time [@Bled2013]. We compared our model with a discrete-time multi-scale model using simulation. We conducted a power analysis to test the ability of our new model to detect trends in abundance. In particular, we compared power to detect trends (1) using a multi-scale occupancy parameter and (2) using occupancy alone, under a variety of scenarios of population change and sampling effort.
+
+Additionally, we conducted a case study using data collected on wolverines (*Gulo gulo*) from camera traps in the Cascade Mountains of Washington, USA.  Wolverines are naturally recolonizing portions of their former range in the continental U.S., including the Washington Cascades [@Aubry2007], but have recently been considered for listing under the Endangered Species Act due in part to their apparent reliance on persistent spring snow cover [@Copeland2010]. Thus, researchers are interested in monitoring changes in wolverine abundance over time. Occupancy models have been suggested as one approach for monitoring wolverine populations; however, @Ellis2014 showed that occupancy models fail to detect trends in abundance for wolverines, unless changes are very large, and only detect trends if large numbers of sites are surveyed. Our objective was to develop a model to improve detection of trends in wolverine populations using data from camera traps, which is the most practical data collection method currently available for this low-density, highly mobile species.     
+
+# Methods
+
+## Continuous-time multi-scale occupancy model
+
+In this hierarchical model, the occupancy process describes presence at sites at two temporal scales: among primary sampling occasions (hereafter primary occasions) and within secondary sampling occasions (hereafter secondary occasions). Site occupancy is estimated at the temporal scale of primary occasions, and site use is estimated at the temporal scale of secondary occasions. We define *occupancy* in the asymptotic sense [@Rota2009; @Efford2012]; that is, a site is considered occupied if any individual of the target species passed through it at any time during a primary occasion. We define shorter-term *use* such that a site is considered used if an individual is consistently available for detection at the site during a given secondary occasion [@Nichols2008]. When occupancy and use are defined in this way, it is possible for a site to be considered occupied but never used, e.g., if an individual is present in a sampling unit but never close enough to a detector to be available for detection. 
+
+We assume geographic closure within secondary occasions. That is, if a site is used during a given secondary occasion, we assume that an individual must be available for detection at that site throughout that secondary occasion. However, a site's use status is allowed to change between secondary occasions, which is what distinguishes a temporally multi-scale occupancy model from a single-scale model. Researchers may define the length and number of primary and secondary occasions *a priori*, depending on the species' movement ecology (and corresponding likelihood of closure assumption violations) and the length of the time periods of interest (e.g., denning seasons). However, in order to estimate probability of use, each primary occasion must contain at least two secondary occasions.
+
+The continuous-time detection process is a Poisson process and can be parametrized either in terms of the number of detections or the time between detections. We use the former parametrization to describe our model, as it is straightforward, requiring only counts of detections and a measure of effort expended at sites (e.g., time that cameras are deployed and functioning). The parameter for this Poisson process is often called a hazard rate [@Ergon2018], and is the rate, per unit time or space, at which events (such as detections) occur.
+
+The probability that site $i$ is occupied in a given primary occasion is $\psi_i$. The probability that site $i$ is used during secondary occasion $b$, given that it is occupied [@Nichols2008], is $\theta_{ib}$. The detection rate at site $i$ during secondary occasion $b$ is $\lambda_{ib}$.
+
+A given site is occupied with probability $\psi_i$:
+
+$$
+\label{z_ctdo}
+z_i \sim Bernoulli( \psi_i )
+$$
+
+Use is conditional on occupancy; a site is used in a given secondary occasion, given it is occupied, with probability $\theta_{ib}$:
+
+$$
+\label{uctdo}
+u_{ib} \sim Bernoulli(z_i \theta_{ib})
+$$
+
+Note that sites that are not occupied cannot be used. Finally, when a site is known to be occupied and used within a secondary occasion (i.e., where $u_{ib}$ is 1), the number of detection events in secondary occasion $b$ at site $i$, $y_{ib}$, is: 
+
+$$
+\label{detctdo}
+y_{ib} \sim Poisson(u_{ib} \lambda_{ib} L_{ib}) 
+$$
+
+where $L_{ib}$ is the length of time of deployment of a camera at site $i$ during secondary occasion $b$. Thus, $\lambda_{ib}$ is interpreted as a detection rate rather than the expected number of detections.
+
+Occupancy and use can be parametrized using local colonization and extinction probabilities. For instance, if there were more than one primary occasion, occupancy at site $i$ in primary occasion $j$ can be modeled as a function of the previous primary occasion's occupancy probability such that:
+
+$$
+\psi_{ij} = (1-\psi_{i(j-1)}) \gamma + \psi_{i(j-1)} (1-\epsilon) 
+$$
+
+where $\gamma$ is the probability that a site not occupied in primary occasion $j-1$ is occupied in primary occasion $j$ and $\epsilon$ is the probability that a site occupied in primary occasion $j-1$ is not occupied in primary occasion $j$. This implementation can also be reduced to a trend model where:
+
+$$
+\psi_{ij} = \rho \psi_{i(j-1)}
+$$
+
+where $\rho$ is a parameter controlling the degree of autocorrelation between occupancy at site $i$ in primary occasion $j$ and occupancy at site $i$ in primary occasion $j-1$.
+
+Each of the parameters indexed by $i$ can be modeled to include site-specific covariates and each parameter indexed by $b$ can be modeled with secondary-occasion-specific covariates. For the sake of simplicity, we include no covariates or spatial or temporal autologistic processes in our model, but simply investigate mean occupancy $\psi_0$, use $\theta_0$, and detection $\lambda_0$ in place of $\psi_i$, $\theta_{ib}$, and $\lambda_{ib}$, respectively.
+
+We can derive a metric, the average occupancy probability $\psi_0$ multiplied by the average use probability $\theta_0$, which is defined as the probability that a site is both occupied during a given primary occasion and used during a given secondary occasion. This metric, called "instantaneous occupancy" (sensu @Efford2012) is essentially equivalent to an occupancy probability if each secondary occasion were treated as a season and a multi-season occupancy model were fit within a primary sampling occasion. This is very similar to the probability that a site is occupied and that the immediate sampling area is also occupied in multi-method occupancy models [@Fisher2014; @Nichols2008; @Whittington2015], except that it accounts for multiple scales of occupancy and use in time, not in space. As such, this model allows researchers to estimate occurrence at multiple scales without more than a single detector (e.g., a camera) per site, by substituting time for space.
+
+## Simulation
+
+We ran simulations under a range of occupancy, use, and detection values. We compared our model to a discrete-time temporal multi-scale occupancy model (hereafter discrete-time model), which was a reduced version of the model proposed by @Bled2013, without spatial autocorrelation or explicit colonization and extinction probabilities. The discrete-time model we used estimated average occupancy and use probabilities over all sites, using multiple "repeat surveys" (tertiary sampling occasions) per secondary occasion. The discrete-time model includes an estimate of per-visit detection probability, $p_0$. This probability can be approximated, in the continuous-time model, using the formula $p_0 = 1-\exp{\frac{-\lambda_0 L}{K}}$, where $L$ is the amount of survey effort (e.g., time) that is expended at a site, and $K$ is the number of repeat surveys [@Guillera-Arroita2011].
+
+We simulated occupancy data over one 120-day primary occasion, with 4 equal-length (30-day) secondary occasions nested within this primary occasion. If a site was used within a secondary occasion, we simulated detections according to a continuous-time Poisson process. For fitting discrete-time models, we sorted detections within a secondary occasion into 3 repeat surveys (tertiary occasions of 10 days each) and created a detection history for each secondary occasion.
+
+We chose occupancy, use, and per-visit detection probabilities ($p_0$ above) to represent a range of possible values. For each of our three parameters, we simulated data under probabilities 0.2, 0.5, and 0.8. To simulate continuous-time data, we backtransformed per-visit detection probabilities into detection rates. For each combination of these parameters, we then simulated 200 data sets and fit continuous-time and discrete-time models.
+
+We fit models using JAGS [@Plummer2003] with R package jagsUI [@Kellner2016; @R2019]. We ran all models in parallel using 3 cores. We ran 3 chains of length 5,000 for each model, with a burn-in of 2,000 iterations and a thin rate of 2. We checked each model for convergence using the Gelman-Rubin convergence diagnostic, and recorded the computation time for each iteration. We calculated root mean square error (RMSE) and mean relative bias in each scenario.
+
+## Case study
+
+Wolverines generally occur at very low densities across their range and have large home ranges [@Inman2012].  In the Washington Cascades wolverines are naturally recolonizing parts of their former range  [@Aubry2007], and there is, therefore, interest in determining the best methods for monitoring changes in the population's abundance. Recent focus has been on using baited camera traps to estimate occupancy as a surrogate for abundance [@MacKenzie2004].  
+As part of a multi-state study, camera trapping data were collected to estimate the occurrence patterns of wolverines across 4 northwestern U.S. states (Washington, Idaho, Montana, and Wyoming; see Lukacs et al. *In Press* for details).  We used a subset of these data collected in the northern Cascades Mountains of Washington state to demonstrate estimation and interpretation of the parameters in our model.  The data were detections of wolverines at 25 baited camera stations operated from December 1^st^, 2016 to March 31^st^, 2017. Each station was deployed before December 1^st^, 2016. Stations accessible by snowmobile during winter months (n = 18) were baited with a deer leg attached to a target tree, and a camera trap was directed at the target tree. These “accessible” stations were revisited monthly—on or around January 1^st^, February 1^st^, and March 1^st^—when they were rebaited, images were retrieved, and batteries replaced. The stations were removed on or around March 31^st^. Stations in locations that were not accessible (n = 7) during winter were outfitted with a camera trap and automated scent dispenser that negated the need for rebaiting visits by researchers. These sites were deployed for the full 4-month survey duration.
+
+
+We divided the survey into 4 30-day secondary occasions. To decrease temporal dependence in detections, we retained only detections that occurred greater than 30 minutes apart at each survey station. We then counted the number of independent detections in each secondary period at each site, and used these counts to create an encounter history matrix for the continuous-time multi-scale model.  We calculated the survey effort, $L$, for each survey site as the number of days that the camera was operational. We also fit a discrete-time multi-scale occupancy model, by binning detections into binary detection-non-detection records within each secondary occasion using 10-day periods (unless sampling occurred for less than 10 days).
+
+We fit models using JAGS (Plummer 2003) with the R package jagsUI [@Kellner2016]. We ran the continuous-time and discrete-time models in parallel using 3 cores. We ran 3 chains of length 50,000 for each model, with a burn-in of 20,000 iterations and a thin rate of 10 (due to high autocorrelation in chains). We checked each model for convergence using the Gelman-Rubin convergence diagnostic.
+
+## Power analysis
+
+To test the ability of the continuous-time multi-scale model to detect changes in abundance over a longer time frame, we conducted a spatially explicit power analysis. We simulated population growth, movement, and detection of a hypothetical population of wolverines using parameters based on empirically informed wolverine movement rates and space use (Web Appendix A). We created 12 combinations of changes in abundance (increase and decrease of 25\% and 50\% over 10 years) and proportion of study area sampled (0.2, 0.5, 0.8).  We delineated 4 secondary periods, each 30 days in length, and 10 primary periods representing 10 years of survey effort. We constructed detection histories for all sampled sites, and fit continuous-time multi-scale models with both implicit and explicit occupancy dynamics between years. We fit linear models to derived occupancy estimates in each simulation replicate, and summed the number of replicates in which a significant trend was detected to calculate simulated power in each scenario.
+
+# Results
+
+## Simulation
+```{r simulation_results}
+# Script to start analyzing test occ sim results
+# Pretty plots, calculate bias/SE/RMSE, etc.
+
+# Working directory stuff
+library(jagsUI)
+library(ggplot2)
+
+gibson <- FALSE
+
+# Want, for ggplot, a data set with variables detectprob, extprob, colprob estimates, and actual occprob, detectprob, ext/col prob status, and which model and rep it is
+# So should have 8 scenarios by 3 models by 3 reps = 72 rows?
+
+nsites <- 200
+psulength <- 120
+ntimes <- 4
+nyears <- 1
+ssulength <- psulength/ntimes
+nsimdata <- 200
+
+results_for_plotting2 <- data.frame(stringsAsFactors = FALSE)
+
+for(detectprob in c(0.2,0.5, 0.8)){
+  for(occ in c(0.2, 0.5,0.8)){
+    for(q in c(0.2, 0.5,0.8)){
+      if(gibson){
+        wkdir <- "//tsclient/C/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
+        scen_folder <- paste("//tsclient/C/Users/Robbie/Desktop/wolverines/ch1poissims/p", p, "/psi", occprob, "/q", q, sep = "")
+        ncores <- 15
+      } else {
+        wkdir <- "C:/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
+        # Specific scenario folder to put rep folders in
+        scen_folder <- paste("C:/Users/Robbie/Desktop/wolverines/ch1poissims/p", detectprob, "/psi", occ, "/q", q, sep = "")
+        ncores <- 3
+      }
+      for(reps in 1:nsimdata){
+        ctdo_out <- load(paste(scen_folder, "/rep", reps, "/ctdoresults.Rdata", sep = ""))
+        out_multiyear_ctdo <- out_multiyear
+        dtdo_out <- load(paste(scen_folder, "/rep", reps, "/doresults.Rdata", sep = ""))
+        out_multiyear_dtdo <- out_multiyear
+        
+        
+        # detection prob estimates
+        ctdo_p <- 1-exp(-out_multiyear_ctdo$mean$int_lambda*ssulength/3)
+        dtdo_p <- out_multiyear_dtdo$mean$int_p
+        
+        ctdo_occ <- out_multiyear_ctdo$mean$int_psi
+        ctdo_use <- out_multiyear_ctdo$mean$int_q
+        dtdo_occ <- out_multiyear_dtdo$mean$int_psi
+        dtdo_use <- out_multiyear_dtdo$mean$int_q
+        ctdo_occuse <- out_multiyear_ctdo$mean$psiq
+        dtdo_occuse <- out_multiyear_dtdo$mean$psiq
+        
+        
+        # coverage
+        ctdo_det_cover <- ifelse(1-exp(-out_multiyear_ctdo$q2.5$int_lambda*(ssulength/3)) < detectprob & 1-exp(-out_multiyear_ctdo$q97.5$int_lambda*(ssulength/3)) > detectprob, 1, 0)
+        dtdo_det_cover <- ifelse(out_multiyear_dtdo$q2.5$int_p < detectprob & out_multiyear_dtdo$q97.5$int_p > detectprob, 1, 0)
+        ctdo_occ_cover <- ifelse(out_multiyear_ctdo$q2.5$int_psi < occ & out_multiyear_ctdo$q97.5$int_psi > occ, 1, 0)
+        dtdo_occ_cover <- ifelse(out_multiyear_dtdo$q2.5$int_psi < occ & out_multiyear_dtdo$q97.5$int_psi > occ, 1, 0)
+        ctdo_use_cover <- ifelse(out_multiyear_ctdo$q2.5$int_q < q & out_multiyear_ctdo$q97.5$int_q > q, 1, 0)
+        dtdo_use_cover <- ifelse(out_multiyear_dtdo$q2.5$int_q < q & out_multiyear_dtdo$q97.5$int_q > q, 1, 0)
+        ctdo_occuse_cover <- ifelse(out_multiyear_ctdo$q2.5$psiq < occ*q & out_multiyear_ctdo$q97.5$psiq > occ*q, 1, 0)
+        dtdo_occuse_cover <- ifelse(out_multiyear_dtdo$q2.5$psiq < occ*q & out_multiyear_dtdo$q97.5$psiq > occ*q, 1, 0)
+        
+        # add rows to data set
+        
+        # convergence
+        ctdo_converged <- ifelse(any(out_multiyear_ctdo$Rhat > 1.1), 0, 1)
+        dtdo_converged <- ifelse(any(out_multiyear_dtdo$Rhat > 1.1), 0, 1)
+        
+        # time comparison
+        ctdo_time <- out_multiyear_ctdo$mcmc.info$elapsed.mins
+        dtdo_time <- out_multiyear_dtdo$mcmc.info$elapsed.mins
+        
+        results_for_plotting2 <- rbind(results_for_plotting2, c(ctdo_p, ctdo_occ, ctdo_use, ctdo_occuse, detectprob, occ, q, occ*q, ctdo_det_cover, ctdo_occ_cover, ctdo_use_cover, ctdo_occuse_cover, reps, "ctdo", ctdo_converged, ctdo_time), stringsAsFactors = F)
+        results_for_plotting2 <- rbind(results_for_plotting2, c(dtdo_p, dtdo_occ, dtdo_use, dtdo_occuse, detectprob, occ,q, occ*q, dtdo_det_cover, dtdo_occ_cover, dtdo_use_cover, dtdo_occuse_cover, reps, "dtdo", dtdo_converged, dtdo_time), stringsAsFactors = F)
+        #print(c(dtdo_p, dtdo_occ, dtdo_use, detectprob, occ, q, reps, "dtdo"))
+        #print(nrow(results_for_plotting2))
+      }
+    }
+  }
+}
+
+
+
+names(results_for_plotting2) <- c("p", "occprob", "use", "occuse", "detection",  "occupancy", "trueuse", "trueoccuse", "det_cover", "occ_cover", "use_cover", "occuse_cover", "rep", "model", "converged", "time")
+
+results_for_plotting2$model2 <- ifelse(results_for_plotting2$model == "ctdo", "Continuous-time", "Discrete-time")
+
+results_for_plotting2$p <- as.numeric(results_for_plotting2$p)
+results_for_plotting2$occprob <- as.numeric(results_for_plotting2$occprob)
+results_for_plotting2$use <- as.numeric(results_for_plotting2$use)
+results_for_plotting2$occuse <- as.numeric(results_for_plotting2$occuse)
+results_for_plotting2$time <- as.numeric(results_for_plotting2$time)
+
+
+# numeric all the 0/1 variables too
+results_for_plotting2$det_cover <- as.numeric(results_for_plotting2$det_cover)
+results_for_plotting2$occ_cover <- as.numeric(results_for_plotting2$occ_cover)
+results_for_plotting2$use_cover <- as.numeric(results_for_plotting2$use_cover)
+results_for_plotting2$occuse_cover <- as.numeric(results_for_plotting2$occuse_cover)
+
+
+results_for_plotting2$detection <- as.numeric(results_for_plotting2$detection)
+results_for_plotting2$occupancy <- as.numeric(results_for_plotting2$occupancy)
+results_for_plotting2$trueuse <- as.numeric(results_for_plotting2$trueuse)
+
+#results_for_plotting2$occuse <- results_for_plotting2$occprob*results_for_plotting2$use # wait no!
+results_for_plotting2$trueoccuse <- results_for_plotting2$occupancy*results_for_plotting2$trueuse
+
+# write csv
+#write.csv(results_for_plotting2, file = "C:/Users/Robbie/Desktop/wolverines/ch1poissims/simresults.csv")
+
+#### Alternative to the above
+#results_for_plotting3 <- read.csv("C:/Users/Robbie/Desktop/wolverines/ch1poissims/simresults.csv")
+####
+
+#### Convergence
+tapply(as.numeric(results_for_plotting2$converged), results_for_plotting2$model, mean)
+
+## Remove non-converged replicates
+results_for_plotting2 <- results_for_plotting2[which(results_for_plotting2$converged==1),]
+
+```
+
+```{r sim_vars_setup}
+
+
+## Bias
+
+tapply(results_for_plotting2$occuse, list(results_for_plotting2$occupancy, results_for_plotting2$trueuse,results_for_plotting2$model),mean)
+tapply(results_for_plotting2$occprob*results_for_plotting2$use, list(results_for_plotting2$detection, results_for_plotting2$trueuse, results_for_plotting2$occupancy, results_for_plotting2$model),mean)
+
+# Bias in occuse
+results_for_plotting2$occusebias <- 100*(results_for_plotting2$occuse - results_for_plotting2$trueoccuse)/(results_for_plotting2$trueoccuse)
+tapply(results_for_plotting2$occusebias, list(results_for_plotting2$detection, results_for_plotting2$trueuse,results_for_plotting2$occupancy,results_for_plotting2$model),mean)
+# See how often ct bias is less than dt bias
+occusebiastab <- tapply(results_for_plotting2$occusebias, list(results_for_plotting2$detection, results_for_plotting2$trueuse,results_for_plotting2$occupancy,results_for_plotting2$model2),mean)
+sum(occusebiastab[,,,2]-occusebiastab[,,,1]>0) # 24 out of 27! that's awesome
+apply(occusebiastab, c(1,4), mean) # Mean bias for different detection probabilities!
+
+# Bias in occ
+results_for_plotting2$occbias <- 100*(results_for_plotting2$occprob - results_for_plotting2$occupancy)/results_for_plotting2$occupancy
+tapply(results_for_plotting2$occbias, list(results_for_plotting2$detection, results_for_plotting2$trueuse,results_for_plotting2$occupancy,results_for_plotting2$model),mean)
+
+# Bias in use
+results_for_plotting2$usebias <- 100*(results_for_plotting2$use - results_for_plotting2$trueuse)/results_for_plotting2$trueuse
+tapply(results_for_plotting2$usebias, list(results_for_plotting2$detection, results_for_plotting2$trueuse,results_for_plotting2$occupancy,results_for_plotting2$model),mean)
+# See how often ct bias is less than dt bias
+usebiastab <- tapply(results_for_plotting2$usebias, list(results_for_plotting2$detection, results_for_plotting2$trueuse,results_for_plotting2$occupancy,results_for_plotting2$model2),mean)
+sum(usebiastab[,,,2]-usebiastab[,,,1]>0) # 24 out of 27! That's awesome
+apply(usebiastab, c(1,4), mean) # Mean bias for different detection probabilities!
+
+
+# Bias in detection
+results_for_plotting2$detbias <- 100*(results_for_plotting2$p - results_for_plotting2$detection)/results_for_plotting2$detection
+tapply(results_for_plotting2$detbias, list(results_for_plotting2$detection, results_for_plotting2$trueuse,results_for_plotting2$occupancy,results_for_plotting2$model),mean)
+
+# Bias by use only
+tapply(results_for_plotting2$occbias, list(results_for_plotting2$trueuse, results_for_plotting2$model),mean)
+tapply(results_for_plotting2$usebias, list(results_for_plotting2$trueuse,results_for_plotting2$model),mean)
+tapply(results_for_plotting2$detbias, list(results_for_plotting2$trueuse,results_for_plotting2$model),mean)
+
+#### RMSE
+results_for_plotting2$det_se <- (results_for_plotting2$p - as.numeric(results_for_plotting2$detection))^2
+tapply(results_for_plotting2$det_se, list(results_for_plotting2$detection, results_for_plotting2$trueuse, results_for_plotting2$occupancy, results_for_plotting2$model), function(x){sqrt(mean(x))})
+
+results_for_plotting2$occ_se <- (results_for_plotting2$occprob - as.numeric(results_for_plotting2$occupancy))^2
+tapply(results_for_plotting2$occ_se, list(results_for_plotting2$detection, results_for_plotting2$trueuse, results_for_plotting2$occupancy, results_for_plotting2$model), function(x){sqrt(mean(x))})
+
+results_for_plotting2$use_se <- (results_for_plotting2$use - as.numeric(results_for_plotting2$trueuse))^2
+tapply(results_for_plotting2$use_se, list(results_for_plotting2$detection, results_for_plotting2$trueuse, results_for_plotting2$occupancy, results_for_plotting2$model), function(x){sqrt(mean(x))})
+
+results_for_plotting2$occuse_se <- (results_for_plotting2$occuse - as.numeric(results_for_plotting2$trueoccuse))^2
+tapply(results_for_plotting2$occuse_se, list(results_for_plotting2$detection, results_for_plotting2$trueuse, results_for_plotting2$occupancy, results_for_plotting2$model), function(x){sqrt(mean(x))})
+
+occusermsetab <- tapply(results_for_plotting2$occuse_se, list(results_for_plotting2$detection, results_for_plotting2$trueuse, results_for_plotting2$occupancy, results_for_plotting2$model), function(x){sqrt(mean(x))})
+sum(occusermsetab[,,,2]-occusermsetab[,,,1]>0) # 24 out of 27! That's awesome
+apply(occusermsetab, c(1,4), mean) # Mean RMSE for different detection probabilities!
+# ^ Not quite right - summarizing works differently with RMSE!
+occuse_rmse_by_det <- tapply(results_for_plotting2$occuse_se, list(results_for_plotting2$detection, results_for_plotting2$model), function(x){sqrt(mean(x))})
+```
+
+```{r explore_sim_data_dt_data_loss}
+#library(jagsUI)
+#library(ggplot2)
+
+gibson <- FALSE
+
+# Want, for ggplot, a data set with variables detectprob, extprob, colprob estimates, and actual occprob, detectprob, ext/col prob status, and which model and rep it is
+# So should have 8 scenarios by 3 models by 3 reps = 72 rows?
+
+nsites <- 200
+psulength <- 120
+ntimes <- 4
+nyears <- 1
+ssulength <- psulength/ntimes
+nsimdata <- 200
+
+sim_data_summaries <- data.frame(stringsAsFactors=FALSE)
+
+for(detectprob in c(0.2,0.5, 0.8)){
+  for(occ in c(0.2, 0.5,0.8)){
+    for(q in c(0.2, 0.5,0.8)){
+      if(gibson){
+        wkdir <- "//tsclient/C/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
+        scen_folder <- paste("//tsclient/C/Users/Robbie/Desktop/wolverines/ch1poissims/p", p, "/psi", occprob, "/q", q, sep = "")
+        ncores <- 15
+      } else {
+        wkdir <- "C:/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
+        # Specific scenario folder to put rep folders in
+        scen_folder <- paste("C:/Users/Robbie/Desktop/wolverines/ch1poissims/p", detectprob, "/psi", occ, "/q", q, sep = "")
+        ncores <- 3
+      }
+      for(reps in 1:nsimdata){
+        data_in <- load(paste(scen_folder, "/rep", reps, "/simdata.Rdata", sep = ""))
+        #temp_data <- data_in
+        ct_data <- temp_data$ctdo_in
+        dt_data <- temp_data$do_in
+        
+        ndetects_ct <- sum(ct_data$y)
+        ndetects_dt <- sum(dt_data$x)
+        ndetoccasions_ct <- sum(ct_data$y>0)
+        ndetoccasions_dt <- 0 # add something here?
+        dt_data_sum <- apply(dt_data$x, c(1,2),sum)
+        mismatch_data <- ifelse(any(ct_data$y>0 & dt_data_sum==0),1,0)
+        # variable to see, for each ct occasion with detections, how many dt tertiary occasions have detections??
+        
+        sim_data_summaries <- rbind(sim_data_summaries, c(detectprob, occ, q, reps, ndetects_ct, ndetects_dt, ndetoccasions_ct, mismatch_data))
+      }
+    }
+  }
+}
+
+# Summaries
+names(sim_data_summaries) <- c("det", "occ", "use", "reps", "ndets_ct", "ndets_dt", "noccsdet_ct", "mismatch_data")
+
+tapply(sim_data_summaries$ndets_ct, list(sim_data_summaries$det, sim_data_summaries$occ, sim_data_summaries$use), mean)
+
+tapply(sim_data_summaries$ndets_dt, list(sim_data_summaries$det, sim_data_summaries$occ, sim_data_summaries$use), mean)
+
+```
+
+Model performance was generally good for both the continuous-time and discrete-time models. Both models estimated detection probability well, with the continuous-time model providing marginally more precise and less biased estimates of detection probability in general (overall RMSE was `r round(as.numeric(tapply(results_for_plotting2$det_se, results_for_plotting2$model2, function(x){sqrt(mean(x))})),dig=3)[1]` for continuous-time detection and `r round(as.numeric(tapply(results_for_plotting2$det_se, results_for_plotting2$model2, function(x){sqrt(mean(x))})),dig=3)[2]` for discrete-time detection; see Web Figure 1). The bias and precision of occupancy estimates were sensitive to use; while occupancy generally had small relative bias, with the largest bias occurring under low-use scenarios (Figure 1; Web Figure 2; Web Table 2). Bias and precision of occupancy, however, were largely not sensitive to changes in detection probability, unless use was low (Web Figure 2). Use and instantaneous occupancy were almost always less biased under the continuous-time model than under the discrete-time model (Tables 1-2; Web Tables 3-4), and bias in these quantities decreased substantially as use increased. 
+
+## Case study
+
+There were 51 independent detections at the 25 sites in Washington state during our designated survey period. Of the 9 sites that had detections, 4 sites had only a single detection.
+
+Posterior mean estimates of long-term, asymptotic occupancy ($\psi_0$) were 0.722 and 0.723 for the continuous-time and discrete-time models, respectively, showing very similar results between models and high wolverine occupancy across the region over the 4-month sampling period (Table 3). However, estimates of use, detection, and instantaneous occupancy were markedly different between models. First, estimates from the continuous-time model were more precise than those from the discrete-time model (Table 3). Results from the continuous-time model estimated average use as 0.155, and instantaneous occupancy as 0.105. The estimate of use from the discrete-time model ($\theta_0 = 0.316$) was double that from the continuous-time model and the instantaneous occupancy estimate from the discrete-time model was 0.219 (Table 3). In other words, the continuous-time model's estimate of the probability that a wolverine is immediately present during a secondary occasion, given that the site is occupied (use), was twice as high as the estimate from the discrete-time model, and the instantaneous occupancy estimates displayed similar patterns. This potentially has enormous implications for research and monitoring, as the continuous-time model would suggest that wolverines are present at survey sites twice as often (use), or use twice as many sites over a short time period (instantaneous occupancy), as the discrete-time model suggests. Finally, detection probabilities were very different between continuous-time and discrete-time models, with continuous-time (approximate) detection probability close to 0.8 and discrete-time detection probability close to 0.2. The continuous-time detection probability is likely higher because the continuous-time model includes all detection events as data, not just detection-non-detection records, and thus could include large clusters of detections that lead to higher estimates of detection probability [@Guillera-Arroita2011]. This difference in detection likely explains the differences in use and instantaneous occupancy estimates and their relative precision (Table 3), as the continuous-time model uses extra information on the number of detections during a given site visit that the discrete-time model does not have.
+
+```{r wolverine_data_analysis}
+library(stringr)
+library(lubridate)
+library(jagsUI)
+library(dplyr)
+
+## Load data
+load("C:/Users/Robbie/Desktop/wolverines/data/RforRobbie/RforRobbie/detections_Long.Rdata")
+load("C:/Users/Robbie/Desktop/wolverines/data/RforRobbie/RforRobbie/cameras_Long.Rdata")
+
+ntimes <- 4
+
+time_scaler <- 1
+
+# Add ungroup - 11/30/2020
+cams.processed <- cams.processed %>% ungroup()
+dets.processed <- dets.processed %>% ungroup()
+
+# Reformat dates
+cams.processed$ActiveStart <- as.POSIXct(cams.processed$ActiveStart, format = "%m/%d/%Y %H:%M:%S", tz = "US/Pacific")
+cams.processed$ActiveEnd <- as.POSIXct(cams.processed$ActiveEnd, format = "%m/%d/%Y %H:%M:%S", tz = "US/Pacific")
+dets.processed$ActiveStart <- as.POSIXct(dets.processed$ActiveStart, format = "%m/%d/%Y %H:%M:%S", tz = "US/Pacific")
+dets.processed$ActiveEnd <- as.POSIXct(dets.processed$ActiveEnd, format = "%m/%d/%Y %H:%M:%S", tz = "US/Pacific")
+dets.processed$ImageDate <- as.POSIXct(dets.processed$ImageDate, format = "%m/%d/%Y %H:%M:%S", tz = "US/Pacific")
+
+# Create copies of ActiveStart and ActiveEnd for bait model data processing
+dets.processed$ActiveStartOld <- dets.processed$ActiveStart
+dets.processed$ActiveEndOld <- dets.processed$ActiveEnd
+cams.processed$ActiveStartOld <- cams.processed$ActiveStart
+cams.processed$ActiveEndOld <- cams.processed$ActiveEnd
+
+# Get rid of camera rows that have no ActiveStart or ActiveEnd
+empty_times <- which(is.na(cams.processed$ActiveStart))
+cams.processed <- cams.processed[-empty_times,]
+
+## WA only subset
+wa.cams <- subset(cams.processed, state=="WA")
+wa.dets <- subset(dets.processed, state=="WA")
+
+## Set up use periods - each month when sampling occurred?
+
+cuttimes <- seq(ISOdate(2016, 12, 1, hour = 0, tz = "US/Pacific"), length.out = ntimes+1, by = "30 days")
+
+
+cutseas <- 1:4
+
+# Some auxiliary variables defining dimensions
+nsites <- length(unique(wa.cams$LocationName))
+ssulength <- 30
+psulength <- ssulength*ntimes
+
+# Create L - effort for each camera
+
+L <- matrix(0, nrow=nsites, ncol=ntimes)
+for(i in 1:nsites){
+  # Check time zones!
+  sitecams <- subset(wa.cams, LocationName==unique(wa.cams$LocationName)[i])
+  if(max(sitecams$start) < min(cuttimes) & min(sitecams$end) > max(cuttimes)){
+    L[i,] <- rep(ssulength, ntimes)
+  } else {
+    # this is if any part of the x-month survey period isn't sampled
+    
+    # beginning time
+    L[i,1] <- ssulength-(max(sitecams$start) - min(cuttimes))
+    # middle times
+    L[i, 2:(ntimes-1)] <- ssulength
+    # end time
+    L[i, ntimes] <- min(as.numeric(ssulength-(max(cuttimes)-min(sitecams$end))), ssulength)
+  }
+}
+
+
+## function to tell you which detections count as independent
+## something is wrong with this function
+
+# Rows that should have dets:
+#2, 5, 7, 11, 12, 13, 15, 16, 19
+# which are missing: 7, 11, 12, 19
+# those are site #'s 457, 494, 502, 558
+# ^ fixed
+
+## JAGS models to run the analyses below
+
+ynew <- matrix(0, nrow=nsites, ncol=ntimes)
+for(i in 1:nsites){
+  sitecams <- subset(wa.cams, LocationName==unique(wa.cams$LocationName)[i])
+  sitedets <- subset(wa.dets, LocationName==unique(wa.cams$LocationName)[i])
+  if(nrow(sitedets) > 0){
+    newtimes <- as.numeric(difftime(sitedets$ImageDate,min(cuttimes),units="mins"))
+    
+    sitedets$event <- c(1, rep(NA, nrow(sitedets)-1))
+    count <- 2
+    event <- 1
+    while(count <= nrow(sitedets)){
+      # Go through newtimes, track time somehow
+      current_time <- newtimes[count] # current time
+      ongoing_event <- min(which(sitedets$event==event)) # the first time in the current event
+      timediff <- current_time-newtimes[ongoing_event] # calculate difference between this time and beginning of event
+      if(timediff>60){
+        event <- event+1 # reset event
+      }
+        sitedets$event[count] <- event
+        count <- count+1
+      
+    }
+    
+    sitedets_unique <- sitedets %>% distinct(event,.keep_all=TRUE)
+    occasioncuts <- cut(sitedets_unique$ImageDate, breaks=cuttimes)
+    ynew[i,] <- table(occasioncuts)
+    
+  }
+}
+
+
+## Continuous-time model
+# setwd
+setwd("C:/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup")
+## impl
+win.data <-list(y=ynew, L=L, nsites=nsites,ntimes=ntimes)
+zinits <- ifelse(apply(ynew,1,sum)>0, 1, 0)
+uinits <- ifelse(ynew > 0, 1, 0)
+inits=function(){list(int_psi=runif(1),int_q=runif(1),int_lambda=runif(1),z=zinits,u=uinits)}
+params <- c("int_psi", "int_q", "int_p", "psiq")
+ni <- 50000; nt <- 10; nb <- 20000; nc <- 3 # 5000;2;2000;3
+out_wa_ctdo <- jags(win.data, inits = inits, params, "wolverinepoiswa.txt", n.chains=nc, n.iter=ni, n.burn=nb, n.thin=nt, parallel = TRUE, n.cores = 3)
+# Should up the thin rate maybe - done
+#print(out_wa_ctdo)
+
+#### Discrete-time data processing (use the below)
+K <- 3
+xnew <- array(0, dim=c(nsites, ntimes, K))
+for(i in 1:nsites){
+  sitecams <- subset(wa.cams, LocationName==unique(wa.cams$LocationName)[i])
+  sitedets <- subset(wa.dets, LocationName==unique(wa.cams$LocationName)[i])
+  if(nrow(sitedets) > 0){
+    
+    # Start with the beginning of the primary occasion
+    newtimes <- as.numeric(difftime(sitedets$ImageDate,min(cuttimes),units="mins"))
+    sitedets$event <- c(1, rep(NA, nrow(sitedets)-1))
+    count <- 2
+    event <- 1
+    while(count <= nrow(sitedets)){
+      # Go through newtimes, track time somehow
+      current_time <- newtimes[count] # current time
+      ongoing_event <- min(which(sitedets$event==event)) # the first time in the current event
+      timediff <- current_time-newtimes[ongoing_event] # calculate difference between this time and beginning of event
+      if(timediff>60){
+        event <- event+1 # reset event
+      }
+        sitedets$event[count] <- event
+        count <- count+1
+      
+    }
+    
+    sitedets_unique <- sitedets %>% distinct(event,.keep_all=TRUE)
+    cuttimes2 <- seq(ISOdate(2016, 12, 1, hour = 0, tz = "US/Pacific"), length.out = ntimes*K+1, by = "10 days")
+    occasioncuts <- cut(sitedets_unique$ImageDate, breaks=cuttimes2)
+    dettab <- table(occasioncuts)
+    for(j in 1:K){
+    xnew[i,j,] <- ifelse(dettab[(1:K)+(j-1)*K]>0,1,0)
+    }
+  }
+}
+
+win.data <-list(x=xnew, K=K, nsites=nsites,ntimes=ntimes)
+zinits <- ifelse(apply(ynew,1,sum)>0, 1, 0)
+uinits <- ifelse(ynew > 0, 1, 0)
+inits=function(){list(int_psi=runif(1),int_q=runif(1),int_p=runif(1),z=zinits,u=uinits)}
+params <- c("int_psi", "int_q", "int_p", "psiq")
+ni <- 50000; nt <- 10; nb <- 20000; nc <- 3 # 5000;2;2000;3
+out_wa_dtdo <- jags(win.data, inits = inits, params, "wolverinedtdowa.txt", n.chains=nc, n.iter=ni, n.burn=nb, n.thin=nt, parallel = TRUE, n.cores = 3)
+# Should up the thin rate maybe - done
+#print(out_wa_dtdo)
+
+# Extra analysis - spatial extent of cameras and average distance between them
+wa.cams.unique <- wa.cams %>% distinct(LocationName, .keep_all=TRUE)
+wa.cams.sp <- SpatialPoints(coords=cbind(wa.cams.unique$UTM_E, wa.cams.unique$UTM_N))
+proj4string(wa.cams.sp) <- "+proj=utm +zone=10 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0"
+
+((max(wa.cams.sp@coords[,1])-min(wa.cams.sp@coords[,1]))*(max(wa.cams.sp@coords[,2])-min(wa.cams.sp@coords[,2])))/1000000 # doesn't seem right
+wa.cam.dists <- pointDistance(wa.cams.sp, lonlat = FALSE)/1000
+wa.cam.dists <- as.matrix(wa.cam.dists)
+mean(wa.cam.dists[upper.tri(wa.cam.dists)])
+
+CoordsForRobbie_201130 <- read_excel("C:/Users/Robbie/Downloads/CoordsForRobbie_201130.xlsx")
+
+CoordsForRobbie_201130$Lat <- CoordsForRobbie_201130$`Lat-DD`
+CoordsForRobbie_201130$Long <- CoordsForRobbie_201130$`Long-DD`
+wa.cams.lonlat <- SpatialPoints(coords=cbind(CoordsForRobbie_201130$Long, CoordsForRobbie_201130$Lat))
+wa.cams.lonlat.dist <- pointDistance(wa.cams.lonlat, lonlat=TRUE)/1000
+wa.cams.lonlat.dist <- as.matrix(wa.cams.lonlat.dist)
+mean(wa.cams.lonlat.dist[lower.tri(wa.cams.lonlat.dist)])
+wa.bbox.pts <- data.frame(expand.grid(wa.cams.lonlat@bbox[1,], wa.cams.lonlat@bbox[2,]))
+wa.bbox.pts <- wa.bbox.pts[c(1,2,4,3),]
+areaPolygon(wa.bbox.pts)/1000000
+#library(spatstat)
+#area(boundingbox(wa.cams.lonlat))
+#wa.cams.area <- areaPolygon(wa.cams.lonlat@bbox)
+
+```
+
+## Power analysis
+```{r power_analysis_results, results="asis"}
+#### Script to extract power, abundance, occupancy and use and occuse, etc.
+
+# tempfolder - folder where simulations are stored
+tempfolder2 <- "C:/Users/Robbie/Desktop/wolverines/implvsdynocc"
+
+library(ggplot2)
+
+nsimdata <- 100
+gibson <- F
+
+pwr_all_reps <- data.frame(t(rep(0,11)),stringsAsFactors = FALSE)
+occabund <- data.frame(stringsAsFactors = FALSE)
+
+signR <- c(-1,-1,1,1) # Oops need to at least fix this in Ch. 1 current power analysis
+
+for(R in c(0.933, 0.972, 1.022, 1.041)){
+  for(prop_cells in c(0.2, 0.5, 0.8)){
+      rmatch <- c(0.933, 0.972, 1.022, 1.041)
+      if(gibson){
+        wkdir <- "//tsclient/C/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
+        scen_folder <- paste("//tsclient/C/Users/Robbie/Desktop/wolverines/wolverinepractice/occtestsims/p", p, "/psi", occprob, "/gammeps", extprob, sep = "")
+      } else {
+        wkdir <- "C:/Users/Robbie/Desktop/wolverines/wolverinepractice/old_and_backup"
+        # Specific scenario folder to put rep folders in
+        scen_folder <- paste(tempfolder2, "/R", R, "/pcells", prop_cells, sep = "")
+      }
+      
+      for(reps in 1:nsimdata){
+        pwr_out_impl <- load(paste(scen_folder, "/rep", reps, "/pwrresultsimpl.Rdata", sep = ""))
+        pwr_out_impl <- out_pwr_impl
+        pwr_out_expl <- load(paste(scen_folder, "/rep", reps, "/pwrresultsexpl.Rdata", sep = ""))
+        pwr_out_expl <- out_pwr_expl
+        pwr_abund <- load(paste(scen_folder, "/rep", reps, "/pwrabund.Rdata", sep = ""))
+        # Change these to have that sign matching thing
+        # impl
+        trend_detected_occ <- ifelse(summary(lm(out_pwr_impl$mean$int_psi ~ c(1:10)))$coefficients[2,4] <= 0.05 & sign(summary(lm(out_pwr_impl$mean$int_psi ~ c(1:10)))$coefficients[2,1]) == signR[which(rmatch==R)], 1, 0)
+        trend_detected_use <- ifelse(summary(lm(out_pwr_impl$mean$int_q ~ c(1:10)))$coefficients[2,4] <= 0.05 & sign(summary(lm(out_pwr_impl$mean$int_q ~ c(1:10)))$coefficients[2,1]) == signR[which(rmatch==R)], 1, 0)
+        trend_detected_occuse <- ifelse(summary(lm(out_pwr_impl$mean$psiq ~ c(1:10)))$coefficients[2,4] <= 0.05 & sign(summary(lm(out_pwr_impl$mean$int_psi*out_pwr_impl$mean$int_q ~ c(1:10)))$coefficients[2,1]) == signR[which(rmatch==R)], 1, 0)
+        occ_cor <- cor(abund, out_pwr_impl$mean$int_psi) # OA correlation
+        use_cor <- cor(abund, out_pwr_impl$mean$int_q)
+        occuse_cor <- cor(abund, out_pwr_impl$mean$int_psi*out_pwr_impl$mean$int_q) # OUA correlation
+        converged <- ifelse(any(unlist(out_pwr_impl$Rhat)>1.1),0,1)
+        
+        pwr_all_reps <- rbind(pwr_all_reps, c(R, prop_cells, "impl", reps, trend_detected_occ, occ_cor, trend_detected_use, use_cor, trend_detected_occuse, occuse_cor, converged))
+        occabund <- rbind(occabund, cbind(out_pwr_impl$mean$int_psi, out_pwr_impl$mean$int_q, out_pwr_impl$mean$psiq, abund, R, prop_cells, "impl", reps, 1:10))
+        
+        # expl
+        trend_detected_occ <- ifelse(summary(lm(out_pwr_expl$mean$psi_est ~ c(1:10)))$coefficients[2,4] <= 0.05 & sign(summary(lm(out_pwr_expl$mean$psi_est ~ c(1:10)))$coefficients[2,1]) == signR[which(rmatch==R)], 1, 0)
+        trend_detected_use <- ifelse(summary(lm(out_pwr_expl$mean$int_q ~ c(1:10)))$coefficients[2,4] <= 0.05 & sign(summary(lm(out_pwr_expl$mean$int_q ~ c(1:10)))$coefficients[2,1]) == signR[which(rmatch==R)], 1, 0)
+        trend_detected_occuse <- ifelse(summary(lm(out_pwr_expl$mean$psiq ~ c(1:10)))$coefficients[2,4] <= 0.05 & sign(summary(lm(out_pwr_expl$mean$psi_est*out_pwr_expl$mean$int_q ~ c(1:10)))$coefficients[2,1]) == signR[which(rmatch==R)], 1, 0)
+        occ_cor <- cor(abund, out_pwr_expl$mean$psi_est) # OA correlation
+        use_cor <- cor(abund, out_pwr_expl$mean$int_q)
+        occuse_cor <- cor(abund, out_pwr_expl$mean$psi_est*out_pwr_expl$mean$int_q) # OUA correlation
+        converged <- ifelse(any(unlist(out_pwr_expl$Rhat)>1.1),0,1)
+        
+        pwr_all_reps <- rbind(pwr_all_reps, c(R, prop_cells, "expl", reps, trend_detected_occ, occ_cor, trend_detected_use, use_cor, trend_detected_occuse, occuse_cor, converged))
+        occabund <- rbind(occabund, cbind(out_pwr_expl$mean$psi_est, out_pwr_expl$mean$int_q, out_pwr_expl$mean$psiq, abund, R, prop_cells, "expl", reps, 1:10))
+        
+    }
+  }
+}
+
+names(pwr_all_reps) <- c("R", "pcells", "modtype", "rep", "trend_occ", "occ_cor", "trend_use", "use_cor", "trend_occuse", "occuse_cor", "converged")
+names(occabund) <- c("occ", "use", "occuse", "abund", "R", "pcells", "modtype", "rep", "year")
+
+pwr_all_reps <- pwr_all_reps[-1,]
+
+# Get rid of unconverged ones
+pwr_all_reps <- pwr_all_reps[pwr_all_reps$converged==1,]
+
+# Same for occabund maybe
+
+## OA, OUA relationships
+#plot(sort(unique(occabund$abund)), tapply(occabund$occ, occabund$abund, mean), type = "l", ylim=c(0,1))
+#lines(sort(unique(occabund$abund)), tapply(occabund$occuse, occabund$abund, mean), col = "red")
+
+#plot(occabund$abund, occabund$occ, type = "l", ylim=c(0,1))
+#lines(occabund$abund, occabund$occuse, col = "red")
+
+pwr_all_reps$trend_occ <- as.numeric(pwr_all_reps$trend_occ)
+pwr_all_reps$trend_use <- as.numeric(pwr_all_reps$trend_use)
+pwr_all_reps$trend_occuse <- as.numeric(pwr_all_reps$trend_occuse)
+```
+
+Power to detect trends in abundance, using either occupancy or instantaneous occupancy as an index, was low in most scenarios. The highest power we found was 63\% to detect a 50\% decline in abundance, using occupancy from an explicit dynamic occupancy model, over 10 years when 80\% of cells were sampled (equivalent to 28 cameras over 7,125 $km^2$, or about 0.4 cameras per 100 $km^2$). We found that the effects on power when using instantaneous occupancy depended strongly on whether occupancy was explicitly or implicitly dynamic. Instantaneous occupancy provided lower power than occupancy in 9 out of 12 scenarios when we used an explicit dynamic occupancy model, only providing higher power when the population was increasing rapidly (50\% in 10 years). Conversely, instantaneous occupancy provided higher power than occupancy in every scenario when we used an implicit dynamic occupancy model, increasing power between 33\% and 67\% depending on the scenario (Figure 3).
+
+# Discussion
+We developed a new continuous-time multi-scale occupancy model to estimate occupancy and use parameters while accounting for imperfect detection.  Based on simulation results, the continuous-time model performed well when detection rate and occupancy probability were moderate to high. The continuous-time model generally provided less biased estimates of use and instantaneous occupancy than the discrete-time model, particularly when detection rate was low. Similarly, the continuous-time occupancy model largely outperformed the discrete-time model in our case study, in terms of providing more precise parameter estimates when detections of wolverines were sparse. This corroborates the findings of @Guillera-Arroita2011 that parameter estimates can be more accurate and precise for continuous-time models than for discrete-time models when little data is available.
+
+Although the results of our simulation suggest that the two models are mostly equivalent, the continuous-time dynamic occupancy model has some advantages. Computation times for continuous-time models were generally lower than those for discrete-time models (0.187 minutes for continuous-time vs. 0.365 minutes for discrete-time per iteration, on average, on a 64-bit operating system with 8 GB of memory, using 3 of 4 available cores). Hazard rates like the continuous-time detection rate can be more easily interpreted and compared across scales of time and space than probabilities [@Ergon2018]. For instance, the hazard rate can be multiplied by a given length of time to give the expected number of detections during that length of time, allowing easy comparison of expected and observed detection frequencies.
+
+In addition to a fast and robust continuous-time detection process, our model estimates occupancy at multiple temporal scales. Using a temporal multi-scale model offers several potential advantages over using a spatial multi-scale model, particularly for camera traps. First, using multiple temporal scales to separately estimate occupancy and use more closely matches the idea that occupancy and instantaneous occupancy occur on different temporal rather than spatial scales [@Efford2012]. Second, as mentioned previously, using different temporal scales to separately estimate occupancy and use allows the user to fit a multi-scale model without deploying multiple detectors per sampling unit [@Nichols2008], which saves time and money and potentially allows more sampling units to be surveyed.
+
+Our power analysis revealed another advantage of the multi-scale model: not only does the continuous-time multi-scale model provide relatively unbiased estimates of instantaneous occupancy, but these instantaneous occupancy estimates can also provide higher power to detect changes in abundance than occupancy alone when an implicit dynamic occupancy model must be used (i.e., a single-season survey design). When it is possible to use an explicit dynamic occupancy model, the ability to estimate colonization and extinction parameters allows researchers to explicitly investigate the processes driving changes in occupancy over time [@MacKenzie2003], in addition to monitoring changes in abundance using occupancy as an index. However, when not every site can be sampled at regular intervals, or when there are not enough sites to estimate colonization and extinction parameters, the combination of implicit dynamic occupancy modeling and using instantaneous occupancy as a metric offers a viable alternative for detecting changes in abundance. 
+
+Despite attempting to address closure issues, the closure assumption is still likely to be violated within secondary occasions as well as within primary occasions for highly mobile species such as wolverines. How serious the effects of these violations of the closure assumption on parameter estimates are will depend on both the nature of the violation and the length of the secondary occasions. Species like wolverines might be detectable at a specific camera station intermittently but still be present in the survey site as a whole [@Fisher2014], use the site only seasonally [@Inman2012] or use the site only once during dispersal [@Moriarty2009]. Our case study results suggest that this may be the case for wolverines in the Cascades, as both the continuous-time and discrete-time model results show that wolverines visit $\geq$ 70\% of the Cascades study area over time, but only consistently use 10-30\% of the area at any given time. Because highly mobile species like wolverines are likely to temporarily leave all but very large sampling units, the lengths of secondary occasions should be species- and context-specific to minimize violations of the closure assumption.
+
+The length of secondary occasion that minimizes violations of the closure assumption is likely strongly related to the size of a surveyed site and the species' home range size relative to the site size. In particular, a secondary occasion should be no longer than the time it would take any individuals present at a site to leave that site. This amount of time will be affected by where the individuals' activity centers are within the site (e.g., individuals with activity centers far inside a site will take longer to leave the site than individuals with activity centers at the edge of a site), and by the individuals' speed and movement behavior. Unfortunately, many of these factors are difficult to estimate. For instance, even defining a site is difficult for camera trap studies; not only can camera traps vary enormously in their effective detection radiuses [@Hofmeester2019], but also, for baited camera traps like those used in wolverine surveys, sites are of indeterminate size, making interpretation of occupancy estimates difficult [@Efford2012]. We suggest fitting the model with varying lengths of secondary occasions to assess the model parameters’ sensitivity to this length, and recommend considering how the spatial scale of the target species’ movements affects the optimal length of secondary occasion. Where available, telemetry data could be used to define appropriate secondary occasion lengths for different site sizes.
+
+In situations when it is too expensive or logistically difficult to collect abundance data, or when occupancy surveys cannot be carried out at regular intervals, this model and its resulting instantaneous occupancy parameter can provide an index of abundance with detection non-detection data alone. Our model's ability to estimate probabilities of occurrence at multiple temporal scales with one detector per site, and its strong performance under low data availability, makes it potentially useful for surveying elusive species in remote areas, such as wolverines [@Ellis2014], fishers [@Linden2017], and lynx [@Whittington2015]. This model can even be extended to allow use to vary by secondary occasion, so that researchers can investigate differences in short-term use between, e.g., denning and non-denning seasons [@Nichols2008].
+
+# Acknowledgements
+
+We thank S. Converse, N. Hostetter, A. Warlick. H. Sipe, M. Sorel, T. Roussin, S. Bassing, A. Bratt, M. Kadin, and O. Sanderfoot for providing helpful comments on earlier drafts. Funding for this work was provided to R.L. Emmet through a Department of the Interior Northwest Climate Adaptation Science Center graduate fellowship and the Charlotte Martin Foundation.
+
+# References
+
+# Supporting Information
+Additional supporting information may be found online in the Supporting Information section at the end of the article.
+
+# Data Availability Statement
+The data that support the findings of portions of this study are available from the Washington Department of Fish and Wildlife. Restrictions apply to the availability of these data, which were used under license for this study. Please contact the department directly with data requests.
+
+# Tables and Figures
+*Figure 1. Posterior mean estimates of occupancy probability from all simulation scenarios where true per-visit detection probability was 0.2. True occupancy probability increases from the left panel (probability 0.2) to the right panel (probability 0.8). The black, dark gray, and light gray boxplots represent scenarios with true use probability of 0.2, 0.5, and 0.8, respectively. *
+```{r simulation_fig_occ, results = "asis"}
+occupancy_lines <- data.frame(occline = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8), occupancy = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8))
+
+ggplot(results_for_plotting2, aes(x = model2, y = occprob)) + 
+  geom_boxplot(aes(fill = factor(trueuse))) + 
+  facet_grid(detection ~ occupancy, labeller = label_both) +
+  geom_hline(data = occupancy_lines, aes(yintercept = occline), colour = "black") + 
+  scale_fill_grey(start=0,end=.9) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1), text=element_text(size=15)) + 
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
+  xlab("model") + ylab("occupancy probability") + labs(fill = "Use probability")
+
+```
+
+*Web Figure 1. Posterior mean estimates of detection probability from all simulation scenarios where true per-visit detection probability was 0.2. True occupancy probability increases from the left panel (probability 0.2) to the right panel (probability 0.8). The black, dark gray, and light gray boxplots represent scenarios with true use probability of 0.2, 0.5, and 0.8, respectively. *
+```{r simulation_fig_occ, results = "asis"}
+occupancy_lines <- data.frame(occline = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8), occupancy = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8))
+
+ggplot(results_for_plotting2, aes(x = model2, y = occprob)) + 
+  geom_boxplot(aes(fill = factor(trueuse))) + 
+  facet_grid(detection ~ occupancy, labeller = label_both) +
+  geom_hline(data = occupancy_lines, aes(yintercept = occline), colour = "black") + 
+  scale_fill_grey(start=0,end=.9) +
+  scale_y_continuous(breaks=c(0.2,0.5,0.8))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1), text=element_text(size=15)) + 
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
+  xlab("model") + ylab("occupancy probability") + labs(fill = "Use probability")
+
+```
+
+*Figure 2. Posterior mean estimates of use probability from all simulation scenarios where true per-visit detection probability was 0.2. True occupancy probability increases from the left panel (probability 0.2) to the right panel (probability 0.8). The black, dark gray, and light gray boxplots represent scenarios with true use probability of 0.2, 0.5, and 0.8, respectively. *
+```{r simulation_fig_use, results = "asis"}
+# Use
+#trueuse_lines <- data.frame(extline = c(0.2,0.5,0.8,0.2,0.5,0.8,0.2,0.5,0.8))
+
+
+ggplot(results_for_plotting2[results_for_plotting2$detection==0.2,], aes(x = model2, y = use)) + 
+  geom_boxplot(aes(fill = factor(trueuse))) + 
+  facet_grid(detection ~ occupancy, labeller = label_both) +
+  geom_hline(yintercept = c(0.2,0.5,0.8), colour = "black") + 
+  scale_fill_grey(start=0,end=.9) +
+  scale_y_continuous(breaks=c(0.2,0.5,0.8))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.text.x = element_text(angle = 45, hjust=1), text=element_text(size=15)) + 
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf)+
+  annotate("segment", x=-Inf, xend=-Inf, y=-Inf, yend=Inf) +
+  xlab("model") + ylab("occupancy probability") + labs(fill = "Use probability")
+
+# Tables
+#dimnames(usebiastab)[[2]] <- c("Use 0.2", "0.5", "0.8")
+#dimnames(usebiastab)[[3]] <- c("Occupancy 0.2", "0.5", "0.8")
+```
+
+*Table 1. Mean relative bias of use probabilities from continuous-time and discrete-time multi-scale occupancy models for all occupancy and use scenarios when detection probability is 0.2.*
+```{r use_bias_tab, results = "asis"}
+# Table 1
+
+#temp <- ftable(usebiastab[1,,,])
+#knitr::kable(temp)
+usebias_df <- expand.grid(Use=c(0.2, 0.5, 0.8), Occupancy=c(0.2, 0.5, 0.8))
+usebias_df$ct <- round(as.numeric(usebiastab[1,,,1]), dig=3)
+usebias_df$dt <- round(as.numeric(usebiastab[1,,,2]),dig=3)
+names(usebias_df) <- c("Use", "Occupancy", "Continuous-time", "Discrete-time")
+knitr::kable(usebias_df)
+```
+
+*Table 2. Mean relative bias of instantaneous probabilities from continuous-time and discrete-time multi-scale occupancy models for all occupancy and use scenarios when detection probability is 0.2.*
+```{r occuse_bias_tab, results= "asis"}
+# Table 2
+occusebias_df <- expand.grid(Use=c(0.2, 0.5, 0.8), Occupancy=c(0.2, 0.5, 0.8))
+occusebias_df$ct <- round(as.numeric(occusebiastab[1,,,1]),dig=3)
+occusebias_df$dt <- round(as.numeric(occusebiastab[1,,,2]),dig=3)
+names(occusebias_df) <- c("Use", "Occupancy", "Continuous-time", "Discrete-time")
+knitr::kable(occusebias_df)
+```
+
+*Table 3. Mean estimates and standard errors for results of continuous-time and discrete-time multi-scale occupancy models of wolverine distribution in the Cascades.*
+```{r data_analysis_results, results="asis"}
+## CTDO and DTDO in one table
+#library(xtable)
+case_study_table <- cbind(round(out_wa_ctdo$summary[-5,1:2],dig=3), round(out_wa_dtdo$summary[-5,1:2],dig=3))
+# Change mean and standard deviation for CT model
+#case_study_table[3,1] <- round(1-exp(-case_study_table[3,1]*10),dig=3)
+#case_study_table[3,2] <- round(10*exp(-case_study_table[3,1]*10)*case_study_table[3,2],dig=3)
+#rownames(case_study_table) <- c("Occupancy", "Use", "Detection probability", "Instantaneous occupancy") # I need to figure out how to do Greek letters
+case_df <- as.data.frame(case_study_table)
+case_df <- rbind(c(colnames(case_df)), case_df)
+colnames(case_df) <- c("Continuous-time", "", "Discrete-time","")
+row.names(case_df) <- c("", "Occupancy", "Use", "Detection probability", "Instantaneous occupancy")
+#case_df[1,1] <- ""
+#param_names <- c("$\\psi$", "$\\theta$", "$\\p$", "$\\psi \\theta$")
+#case_study_table <- cbind(param_names, case_study_table)
+knitr::kable(case_df) # For now!
+#xtable(case_study_table, latex = F)
+```
+
+*Figure 3. Estimates of power from 12 simulated scenarios of different population change and sampling area. The top two panels represent population declines and the bottom two panels represent population growth. The x-axis is the proportion of cells sampled and the y-axis is the power to detect a trend in abundance. The triangles (occupancy) and circles (instantaneous occupancy) are shown for each scenario under the explicit dynamic occupancy model (solid lines), and implicit dynamic occupancy model (dashed lines).*
+```{r pwr_plot, results="asis"}
+### Basic power analysis
+#mean(pwr_all_reps$trend_occ)
+#mean(pwr_all_reps$trend_use)
+#mean(pwr_all_reps$trend_occuse)
+#cor(occabund$occ, occabund$abund)
+#cor(occabund$occuse, occabund$abund)
+#tapply(pwr_all_reps$trend_occ, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
+#tapply(pwr_all_reps$trend_occuse, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
+
+#100*(tapply(pwr_all_reps$trend_occuse, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean) -
+  #tapply(pwr_all_reps$trend_occ, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean))/
+  #tapply(pwr_all_reps$trend_occ, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
+
+# Create data frame for ggplot?
+pwr_ggplot <- data.frame(pwr = c(tapply(pwr_all_reps$trend_occ, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
+, tapply(pwr_all_reps$trend_occuse, list(pwr_all_reps$R, pwr_all_reps$pcells, pwr_all_reps$modtype), mean)
+), parameter = c(rep("occupancy", 24), rep("inst. occupancy", 24)))
+
+scenarios <- expand.grid(R=c(0.933, 0.972, 1.022, 1.041), pcells=c(0.2, 0.5,0.8), model=c("explicit", "implicit"))
+
+pwr_ggplot <- cbind(pwr_ggplot, rbind(scenarios, scenarios))
+
+## Full power analysis plot
+cbPalette <- c("#E69F00", "#56B4E9")
+
+ggplot(pwr_ggplot, aes(x=pcells, y=pwr)) + geom_path(aes(group=interaction(parameter, model), linetype = model),size=1.5) + geom_point(aes(shape=parameter),size=2) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), text = element_text(size=15), panel.spacing=unit(1, "lines")) +
+  #scale_color_manual(values=cbPalette) + 
+  facet_wrap(~R, nrow=2, labeller = label_both) +
+  xlab("proportion of cells sampled") + ylab("power")
+```
